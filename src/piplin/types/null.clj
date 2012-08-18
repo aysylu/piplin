@@ -1,6 +1,6 @@
 (ns piplin.types.null
   (:refer-clojure :exclude [cast])
-  (:use [piplin types])
+  (:use [piplin types protocols])
   (:use [piplin.types bits])
   (:use [slingshot.slingshot]))
 
@@ -14,7 +14,7 @@
   :null
   [type obj]
   (when-not (nil? obj)
-    (throw+ (error obj "must be nil"))))
+    (ast-error type (str obj "must be nil"))))
 
 (defmethod from-bits
   :null 

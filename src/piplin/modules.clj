@@ -1,5 +1,5 @@
 (ns piplin.modules
-  (:use [piplin sim types])
+  (:use [piplin sim types protocols])
   (:use [clojure.string :only [join]])
   (:use [slingshot.slingshot :only [throw+]])
   (:refer-clojure :exclude [replace cast])
@@ -90,9 +90,7 @@
        
         ;Start by merging outputs and feedback and making
         ;their ports
-        register-ports (->> (merge-with
-                              #(throw+ (error "Duplicate names:" %1 %2))
-                              outputs feedback)
+        register-ports (->> (concat outputs feedback)
                 ;Next, we convert all the outputs and feedback to
                 ;their types.
                 (map (fn [[k v]] [k (typeof v) :register]))
