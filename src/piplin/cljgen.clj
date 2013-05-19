@@ -42,7 +42,7 @@
   [ast name-lookup]
   (let [{lhs :lhs rhs :rhs}
         (merged-args ast)]
-    (list piplin.core/+
+    (list 'piplin.core/+
           (name-lookup lhs)
           (name-lookup rhs))))
 
@@ -64,10 +64,27 @@
     (apply concat body))
   )
 
+(defn make-scaffolding
+  "Takes a seq of argument names, a seq of bindings,
+  and the name of the result and returns an `eval`able
+  form for that function."
+  [args bindings result]
+  (list `fn (vec args)
+        (list `let (vec bindings)
+              result)))
 
-(make-let-bindings (piplin.core/+ 3 (piplin.types/uninst ((piplin.core/uintm 4) 4))                                    ) {})
+(defn cljgen-expr
+  "Takes an expr and returns an `eval`able form"
+  [expr]
+  (let [name-table {}
+        bindings (make-let-bindings expr name-table)
+        result (-> bindings butlast last)]
+    (eval (make-scaffolding [] bindings result))))
+
+((cljgen-expr (piplin.core/+ 3 (piplin.types/uninst ((piplin.core/uintm 4) 4))                                    )))
  (clojure.pprint/pprint (piplin.core/+ 3 (piplin.types/uninst ((piplin.core/uintm 4) 4))                                    ))
 
 
 ((eval (list `fn [] (list `let '[G__3988 4 G__3989 G__3988 G__3990 3 G__3991 (piplin.core/+ G__3990 G__3989)]
    'G__3991))))
+
