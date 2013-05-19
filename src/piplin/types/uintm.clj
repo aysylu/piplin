@@ -45,10 +45,8 @@
   (cond
     (= (typeof obj) this) obj ;Already correct
     (= (kindof obj)
-       (:kind this)) (throw+
-                       (error
-                         "Incompatible type instances: " this
-                         "and" obj))
+       (:kind this))
+    (throw+ (error (str "Cannot convert " obj " to " this)))
     (isa-type? :j-integral (kindof obj)) (instance
                                            this
                                            (promote (anontype :j-long)
@@ -56,64 +54,69 @@
     :else (throw+ (error "Don't know how to promote to :uintm from"
                          (typeof obj)))))
 
-
-
-
 (defbinopimpl impl/+ :uintm [:j-integral]
-  [x y]
-  (+ (value x) (value y)))
+  [lhs rhs]
+  (+ (value lhs) (value rhs)))
 
 (defbinopimpl impl/- :uintm [:j-integral]
-  [x y]
-  (- (value x) (value y)))
+  [lhs rhs]
+  (- (value lhs) (value rhs)))
 
 (defbinopimpl impl/* :uintm [:j-integral]
-  [x y]
-  (* (value x) (value y)))
+  [lhs rhs]
+  (* (value lhs) (value rhs)))
 
 (defmethod impl/> [:uintm :uintm]
-  [x y]
-  (if (and (pipinst? x) (pipinst? y))
-    (> (value x) (value y))
-    (mkast (anontype :boolean) :> [x y] impl/>)))
+  [lhs rhs]
+  (if (and (pipinst? lhs) (pipinst? rhs))
+    (> (value lhs) (value rhs))
+    (mkast (anontype :boolean) :> [lhs rhs] impl/>)))
 (defcoercions impl/> :uintm [:j-integral])
 
 (defmethod impl/>= [:uintm :uintm]
-  [x y]
-  (if (and (pipinst? x) (pipinst? y))
-    (>= (value x) (value y))
-    (mkast (anontype :boolean) :>= [x y] impl/>=)))
+  [lhs rhs]
+  (if (and (pipinst? lhs) (pipinst? rhs))
+    (>= (value lhs) (value rhs))
+    (mkast (anontype :boolean) :>= [lhs rhs] impl/>=)))
 (defcoercions impl/>= :uintm [:j-integral])
 
 (defmethod impl/< [:uintm :uintm]
-  [x y]
-  (if (and (pipinst? x) (pipinst? y))
-    (< (value x) (value y))
-    (mkast (anontype :boolean) :< [x y] impl/<)))
+  [lhs rhs]
+  (if (and (pipinst? lhs) (pipinst? rhs))
+    (< (value lhs) (value rhs))
+    (mkast (anontype :boolean) :< [lhs rhs] impl/<)))
 (defcoercions impl/< :uintm [:j-integral])
 
 (defmethod impl/<= [:uintm :uintm]
-  [x y]
-  (if (and (pipinst? x) (pipinst? y))
-    (<= (value x) (value y))
-    (mkast (anontype :boolean) :<= [x y] impl/<=)))
+  [lhs rhs]
+  (if (and (pipinst? lhs) (pipinst? rhs))
+    (<= (value lhs) (value rhs))
+    (mkast (anontype :boolean) :<= [lhs rhs] impl/<=)))
 (defcoercions impl/<= :uintm [:j-integral])
 
 (defcoercions piplin.types.binops/= :uintm [:j-integral])
 
 
 (defbinopimpl impl/bit-and :uintm [:j-integral]
-  [x y]
-  (impl/bit-and (value x) (value y)))
+  [lhs rhs]
+  (impl/bit-and (value lhs) (value rhs)))
 
-;TODO: (bit-or #b00 #b110010) should throw an exception
+;TODO: (bit-or #b00 #b110010) should throw an elhsception
 (defbinopimpl impl/bit-or :uintm [:j-integral]
-  [x y]
-  (impl/bit-or (value x) (value y)))
+  [lhs rhs]
+  (impl/bit-or (value lhs) (value rhs)))
 
 (defbinopimpl impl/bit-xor :uintm [:j-integral]
-  [x y]
-  (impl/bit-xor (value x) (value y)))
+  [lhs rhs]
+  (impl/bit-xor (value lhs) (value rhs)))
+
+(defbinopimpl impl/bit-shift-left :uintm [:j-integral]
+  [lhs rhs]
+  (impl/bit-shift-left (value lhs) (value rhs)))
+
+(defbinopimpl impl/bit-shift-right :uintm [:j-integral]
+  [lhs rhs]
+  (impl/bit-shift-right (value lhs) (value rhs)))
 
 (defunopimpl impl/bit-not :uintm
   [x]

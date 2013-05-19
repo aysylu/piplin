@@ -1,17 +1,17 @@
 (ns piplin.types.bits
   "This namespace contains logic to manage bit types.
-  
+
   First, it defines the `bits` type, which supports `bit-and`, `bit-or`,
   `bit-xor`, and `bit-not`.
-  
+
   It defines the important multimethods `bit-width-of`, `from-bits`,
   and `get-bits`, which must be implemented by every type that wants
   to have its immediate forms synthesizable, as well as to participate
   in any bit-width related calculations. The need only operate on pipinsts.
-  
+
   `serialize` and `deserialize` form the standard API for converting
   between any type and bits.
-  
+
   Finally, this namespaces adds the reader literal form `#b0101` for bits."
   (:use [slingshot.slingshot])
   (:refer-clojure :exclude [cast])
@@ -84,7 +84,7 @@
   (let [n (bit-width-of (typeof expr))
         type (bits n)]
     (if (pipinst? expr)
-      (instance type (get-bits expr)) 
+      (instance type (get-bits expr))
       (mkast type :serialize [expr] serialize))))
 
 (defn deserialize
@@ -139,8 +139,11 @@
   ([]
    (instance (bits 0) []))
   ([bs]
+   (assert (kindof bs) :bits)
    bs)
   ([b1 b2]
+   (assert (kindof b1) :bits)
+   (assert (kindof b2) :bits)
    (let [type (bits (+ (-> b1 typeof :n)
                        (-> b2 typeof :n)))]
      (if (and (pipinst? b1) (pipinst? b2))
@@ -197,7 +200,19 @@
   (vec (map #(bit-xor %1 %2)
             (value x) (value y))))
 
-(defunopimpl impl/bit-not :bits 
+(defbinopimpl impl/bit-shift-left :bits [:j-integral]
+  [x y]
+  (let [n (bitvec-to-long (value y))
+        remainder (drop n (value x))]
+    (vec (concat remainder (repeat n 0)))))
+
+(defbinopimpl impl/bit-shift-right :bits [:j-integral]
+  [x y]
+  (let [n (bitvec-to-long (value y))
+        remainder (drop-last n (value x))]
+    (vec (concat (repeat n 0) remainder))))
+
+(defunopimpl impl/bit-not :bits
   [x]
   (vec (map (partial - 1) (value x))))
 

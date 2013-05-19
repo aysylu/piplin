@@ -3,11 +3,11 @@
   clojure core functions. It has them by default dispatch to clojure's
   core implementation, but opens the possibility to adding support for
   many bitwise and numeric types in piplin.
-  
+
   There are also several macros useful for making unary and binary functions
   that delegate to clojure.core implementations, which is useful for
   adding support for currently unsupported operations."
-  (:refer-clojure :exclude [= not= bit-and bit-or bit-xor bit-not + - * inc dec > >= < <= cast])
+  (:refer-clojure :exclude [= not= bit-and bit-or bit-xor bit-not + - * inc dec > >= < <= cast and or bit-shift-left bit-shift-right pos? neg? zero?])
   (:require [piplin.types])
   (:require [piplin.types.numbers])
   (:require [clojure.core :as clj])
@@ -20,7 +20,7 @@
   [op key]
   `(defmethod ~op ~key
      [~'x]
-     ('~(ns-resolve 'clojure.core op) ~'x)))
+     (~(symbol "clojure.core" (name op)) ~'x)))
 
 (defn- make-core-binop-fn
   "Makes syntax for a binop using the core
@@ -28,7 +28,7 @@
   [op key]
   `(defmethod ~op [~key ~key]
      [~'x ~'y]
-     ('~(ns-resolve 'clojure.core op) ~'x ~'y)))
+     (~(symbol "clojure.core" (name op)) ~'x ~'y)))
 
 (defmacro def-n-ary-binop
   "Defines a generic function for a binary operation
@@ -67,22 +67,22 @@
        (defmulti ~op binary-dispatch :hierarchy piplin.types/types)
        ~@core-methods)))
 
-(def-n-ary-binop + 0 [:j-num]) 
-(def-n-ary-binop - 0 [:j-num]) 
-(def-n-ary-binop * 0 [:j-num]) 
-(def-n-ary-binop bit-and 0 [:j-num]) 
-(def-n-ary-binop bit-or 0 [:j-num]) 
-(def-n-ary-binop bit-xor 0 [:j-num]) 
+(def-n-ary-binop + 0 [:j-num])
+(def-n-ary-binop - 0 [:j-num])
+(def-n-ary-binop * 0 [:j-num])
+(def-n-ary-binop bit-and 0 [:j-num])
+(def-n-ary-binop bit-or 0 [:j-num])
+(def-n-ary-binop bit-xor 0 [:j-num])
 
 (defmulti bit-not
   piplin.types/piplin-clojure-dispatch
   :hierarchy piplin.types/types)
 (defmethod bit-not :use-core-impl
   [x]
-  (clj/not x)) 
+  (clj/not x))
 (defmethod bit-not :default
   [x]
-  (clj/not x)) 
+  (clj/not x))
 
 (defn inc
   "Increments x"
@@ -100,3 +100,20 @@
 (def-binary-binop < [:j-num])
 (def-binary-binop >= [:j-num])
 (def-binary-binop <= [:j-num])
+(def-binary-binop bit-shift-left [:j-num])
+(def-binary-binop bit-shift-right [:j-num])
+
+(defn zero?
+  "Returns true if x is 0"
+  [x]
+  (= x 0))
+
+(defn pos?
+  "Returns true if x is positive"
+  [x]
+  (> x 0))
+
+(defn neg?
+  "Returns true if x is negative" 
+  [x]
+  (< x 0))

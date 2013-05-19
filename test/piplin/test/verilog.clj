@@ -2,65 +2,96 @@
   (:use clojure.test)
   (:use [clojure.pprint :only [pprint]])
   (:use [slingshot.slingshot :only [throw+]])
-  (:use piplin.test.util)
-  (:refer-clojure :as clj :exclude [not= bit-or cond bit-xor + - * bit-and assoc assoc-in inc dec bit-not condp < > <= >= = cast get not])
+  (:use piplin.test.util
+        plumbing.core)
+  (:refer-clojure :as clj :exclude [not= bit-or cond bit-xor + - * bit-and assoc assoc-in inc dec bit-not condp < > <= >= = cast get not and or bit-shift-left bit-shift-right pos? neg? zero?])
   (:use [piplin.types bits boolean bundle enum numbers union core-impl binops uintm])
-  (:use [piplin connect types math modules mux sim verilog [seven-segment-decoder :only [seven-seg-tester]]]))
+  (:use [piplin types math modules mux verilog [seven-segment-decoder :only [seven-seg-tester]]]))
 
-(defmodule counter [n]
-  [:outputs [x ((uintm n) 0)]]
-  (connect x (inc x)))
+(defn counter [n]
+  (modulize
+    {:x* (fnk [x*] (inc x*))}
+    {:x* ((uintm n) 0)}))
 
 (deftest counter-test
-  (icarus-test (modules->verilog+testbench
+  (icarus-test (verify
                  (counter 8) 100)))
 
-(defmodule multicounter [x y z]
-  [:modules [foo (counter x)
-             bar (counter y)
-             baz (counter z)]])
+(defn multicounter [x y z]
+  (modulize
+    {:x-out (fnk [] (:x* ((counter x))))
+     :y-out (fnk [] (:x* ((counter y))))
+     :z-out (fnk [] (:x* ((counter z))))}
+    nil))
 
 (deftest multicounter-test
-  (icarus-test (modules->verilog+testbench
+  (icarus-test (verify
                  (multicounter 1 2 3) 100)))
 
-(defmodule fib-counter [x]
-  [:modules [c (counter x)]
-   :feedback [prev ((uintm x) 0)]
-   :outputs [n ((uintm x) 0)]]
-  (connect prev (subport c :c :x))
-  (connect n (+ prev (subport c :c :x))))
+(defn fib-counter [x]
+  (modulize
+    {:sub (fnk []
+               (:x* ((counter x))))
+     :prev (fnk [sub] sub)
+     :n (fnk [prev sub]
+             (+ prev sub))}
+    {:prev ((uintm x) 0)
+     :n ((uintm x) 0)}))
 
 (deftest fib-counter-test
-  (icarus-test (modules->verilog+testbench
-                 (fib-counter 32) 100)))
+  (icarus-test (verify
+                 (fib-counter 32) 100)
+                 ))
 
-(defmodule delayer []
-  [:inputs [in (uintm 8)]
-   :outputs [out ((uintm 8) 0)]]
-  (connect out in))
+(def delayer
+  (modulize {:out (fnk [in] in)} {:out ((uintm 8) 0)}))
 
-(defmodule delayer-holder []
-  [:modules [c (counter 8)
-             d (delayer)]]
-  (connect (subport d :d :in) (subport c :c :x)))
+(def delayer-holder
+  (modulize :root {:out (fnk []
+                             (let [counter ((counter 8))
+                                   delayer (delayer :in (:x* counter))]
+                               (:out delayer)))}
+            nil))
 
 (deftest delayer-test
-  (icarus-test (modules->verilog+testbench
-                 (delayer-holder) 50)))
+  (icarus-test (verify
+                 delayer-holder 50)))
 
 (deftest seven-seg-test
-  (icarus-test (modules->verilog+testbench
-                 (seven-seg-tester 1) 10)) 
-  (icarus-test (modules->verilog+testbench
-                 (seven-seg-tester 2) 10)) 
-  (icarus-test (modules->verilog+testbench
-                 (seven-seg-tester 3) 10)) 
-  (icarus-test (modules->verilog+testbench
-                 (seven-seg-tester 4) 30)) 
-  (icarus-test (modules->verilog+testbench
-                 (seven-seg-tester 8) 300)) 
-  (icarus-test (modules->verilog+testbench
+  (icarus-test (verify
+                 (seven-seg-tester 1) 10))
+  (icarus-test (verify
+                 (seven-seg-tester 2) 10))
+  (icarus-test (verify
+                 (seven-seg-tester 3) 10))
+  (icarus-test (verify
+                 (seven-seg-tester 4) 30))
+  (icarus-test (verify
+                 (seven-seg-tester 8) 300))
+  (icarus-test (verify
                  (seven-seg-tester 9) 600))
-  (icarus-test (modules->verilog+testbench
+  (icarus-test (verify
                  (seven-seg-tester 10) 1025)))
+
+(def and-or
+  (modulize
+    {:c (fnk [c] (inc c))
+     :c-processed (fnk [c]
+                       (map #(deserialize
+                               (anontype :boolean)
+                               (bit-slice (serialize c)
+                                          % (inc %)))
+                            (range 3)))
+     :x (fnk [c-processed]
+             (let [[a b c] c-processed]
+               (and a b)))
+     :y (fnk [c-processed]
+             (let [[a b c] c-processed]
+               (or b c)))}
+    {:c ((uintm 3) 0)
+     :x false
+     :y false}))
+
+
+(deftest and-or-test
+  (icarus-test (verify and-or 20)))

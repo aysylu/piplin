@@ -14,10 +14,10 @@
   :null
   [type obj]
   (when-not (nil? obj)
-    (ast-error type (str obj "must be nil"))))
+    (throw+ (error (str obj " must be nil")))))
 
 (defmethod from-bits
-  :null 
+  :null
   [type bits]
   nil)
 

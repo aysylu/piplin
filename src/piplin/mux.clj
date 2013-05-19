@@ -1,7 +1,7 @@
 (ns piplin.mux
   (:require [clojure.core :as clj])
   (:refer-clojure :exclude [cond condp cast])
-  (:use [piplin types connect protocols])
+  (:use [piplin types protocols])
   (:use [slingshot.slingshot]))
 
 (defn mux2-impl
@@ -14,32 +14,13 @@
       (->
         (mkast (typeof v1) :mux2 [sel v1 v2] mux2-impl)
         (assoc-dist-fn
-          #(mux2-impl sel (cast % v1) (cast % v2)))))))  
+          #(mux2-impl sel (cast % v1) (cast % v2)))))))
 
 (defn mux2-helper
   [sel v1-thunk v2-thunk]
-  (let [v1-connections (atom {})
-        v2-connections (atom {})
-        v1-connect #(swap! v1-connections clj/assoc %1 %2)
-        v2-connect #(swap! v2-connections clj/assoc %1 %2)
-        v1 (binding [connect v1-connect]
-             (v1-thunk))
-        v2 (binding [connect v2-connect]
-             (v2-thunk))]
-    (clj/cond
-      ;TODO: this code breaks if set isn't called below
-      ;I don't understand why/don't think that should happen
-      (clj/not= (set (keys @v1-connections)) (set (keys @v2-connections)))
-      (throw+ (error "Must have the same connections on both parts"))
-      (seq @v1-connections)
-      (->> @v1-connections
-        keys
-        (map #(connect % (mux2-impl sel
-                                    (clj/get @v1-connections %) 
-                                    (clj/get @v2-connections %))))
-        dorun)
-      :else,
-      (mux2-impl sel v1 v2))))
+  (let [v1 (v1-thunk)
+        v2 (v2-thunk)]
+    (mux2-impl sel v1 v2)))
 
 (defmacro mux2
   [sel v1 v2]
@@ -54,10 +35,10 @@
                      (partition 2)
                      reverse
                      (reduce (fn [prev [p t]]
-                               (fn [] (mux2-helper p t prev))) 
+                               (fn [] (mux2-helper p t prev)))
                              (last thunks)))]
       (if (clj/= last-pred :else)
-        (mux-tree) 
+        (mux-tree)
         (throw+ (error "Must include :else in simulated cond"))))
     (let [thunk (->> thunks
                   (interleave predicates)

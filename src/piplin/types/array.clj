@@ -4,7 +4,7 @@
   (:use [slingshot.slingshot])
   (:use [piplin protocols types])
   (:use [clojure.core.incubator :only [seqable?]])
-  (:use [piplin.types.bits]))
+  (:use [piplin.types bits [uintm :only [uintm]]]))
 
 (defpiplintype Array [array-len array-type])
 (defn array
@@ -19,18 +19,19 @@
 (defmethod promote
   :array
   [type obj]
+  ;TODO: if type or obj is an error, return it instead, or maybe do best effort, or ...
   (if (and (pipinst? obj)
            (= (kindof obj) :array))
-    (let [{atype :array-type alen :array-length} (typeof obj)
+    (let [{atype :array-type alen :array-len} (typeof obj)
           s (value obj)]
-      (when-not (= alen (:array-length type))
-        (throw+ (error "Array is not of length"
-                       (:array-length type)
-                       "=>" obj)))
-      (instance type (into {}
-                           (map (fn [[k v]]
-                                  [k (promote (:array-type type) v)])
-                                s))))
+      (if-not (= alen (:array-len type))
+        (throw+ (error (str "Array is not of length"
+                            (:array-len type)
+                            "=>" obj)))
+        (instance type (into {}
+                             (map (fn [[k v]]
+                                    [k (promote (:array-type type) v)])
+                                  s)))))
     (do
       (when-not (seqable? obj)
         (throw+ "Can only promote seqables to piplin array"))
@@ -43,11 +44,11 @@
         (let [casted-obj (zipmap (->> (range array-len)
                                    (map (comp keyword str)))
                                  (map (partial cast array-type)
-                                      s))] 
+                                      s))]
           (if (every? pipinst? (vals casted-obj))
             (instance type casted-obj :constrain)
             (mkast-explicit-keys type :make-array
-                                 (map keyword (range array-len))
+                                 (map (comp keyword str) (range array-len))
                                  casted-obj
                                  (fn [& args]
                                    (promote type args)))))))))
@@ -82,7 +83,7 @@
   :array
   [type bs]
   (let [{array-type :array-type array-len :array-len} type
-        objs (partition (bit-width-of array-type) bs)] 
+        objs (partition (bit-width-of array-type) bs)]
     (mapv (partial from-bits array-type) objs)))
 
 (defmethod piplin.types/nth-multi
@@ -98,13 +99,14 @@
   ([array i]
    (piplin.types/valAt-multi array i nil))
   ([array i notfound]
-   (if (and (pipinst? i)
-            (pipinst? array))
-     (get (value array) (-> i value str keyword) notfound)
-     (mkast (:array-type (typeof array))
-            :array-get 
-            [array i]
-            get))))
+   (let [i (cast (uintm (log2 (-> array typeof :array-len))) i)]
+     (if (and (pipinst? i)
+              (pipinst? array))
+       (get (value array) (-> i value str keyword) notfound)
+       (mkast (:array-type (typeof array))
+              :array-get
+              [array i]
+              piplin.types/valAt-multi)))))
 
 (defmethod piplin.types/entryAt-multi
   :array
@@ -112,7 +114,7 @@
    (let [alen (:array-len (typeof array))]
      (when (>= i alen)
        (throw+ (str "Array is only " alen
-                    "long; tried to access index " i))) 
+                    "long; tried to access index " i)))
      (get array i))))
 
 (defmethod piplin.types/assoc-multi
@@ -149,3 +151,42 @@
     (->> (range array-len)
       (map (comp keyword str))
       (map val-map))))
+
+(defn empty-array
+  "Takes an array type and returns an empty array,
+  as if all the memory was initialized to zero."
+  [type]
+  (let [{:keys [array-len array-type]} type
+        width (bit-width-of array-type)
+        bits (cast (bits width) 0)
+        template (deserialize array-type bits)]
+    (cast type (vec (repeat array-len template)))))
+
+(defn store
+  ([array write-enable index v]
+   (assert (= :boolean (kindof write-enable)) "Write enable must be a boolean")
+   (let [{:keys [array-type array-len]} (typeof array)
+         v (cast array-type v)]
+     (if (and (pipinst? array)
+              (pipinst? index)
+              (pipinst? write-enable)
+              (pipinst? v))
+       (if write-enable
+         (assoc array index v)
+         array)
+       (mkast (typeof array)
+              :array-store
+              [array write-enable index v]
+              store))))
+  ([a we i v & more]
+   (assert (zero? (mod (count more) 3)) "Inputs must come in groups of 3")
+   (when (every? pipinst? (list* we i v more))
+     (let [indices (conj i (take-nth 2 more))]
+       (assert (= (count indices) (count (distinct indices)))
+               "Must assign to different indices")))
+   (apply store (store a we i v) more)))
+
+(defn array?
+  "Predicate to determine if the argument is an array"
+  [a]
+  (= (kindof a) :array))

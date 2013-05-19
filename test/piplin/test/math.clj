@@ -1,8 +1,9 @@
 (ns piplin.test.math
-  (:use clojure.test)
+  (:use clojure.test
+        plumbing.core)
   (:use [slingshot.slingshot :only [throw+]])
-  (:refer-clojure :as clj :exclude [not= bit-or bit-xor + - * bit-and inc dec bit-not < > <= >= = cast not])
-  (:use [piplin types math modules sim connect protocols])
+  (:refer-clojure :as clj :exclude [not= bit-or bit-xor + - * bit-and inc dec bit-not < > <= >= = cast not and or bit-shift-right bit-shift-left pos? neg? zero?])
+  (:use [piplin types math modules protocols])
   (:use [piplin.types bits boolean enum numbers core-impl binops uintm])
   (:import clojure.lang.ExceptionInfo))
 
@@ -29,6 +30,38 @@
   (is (not= 1 2))
   (is (not (not= 0 0))))
 
+(deftest boolean-test
+  (is (not false))
+  (is (and))
+  (is (not (or)))
+  (is (and true true))
+  (is (not (and true false)))
+  (is (not (and false true)))
+  (is (not (and false true true true)))
+  (is (not (and true true true false)))
+  (is (and true true true true))
+
+  (is ((make-sim-fn (and (uninst true) true))))
+  (is ((make-sim-fn (and true (uninst true)))))
+  (is ((make-sim-fn (and true true (uninst true)))))
+  (is ((make-sim-fn (and (uninst true) true true))))
+  (is (make-sim-fn (and (uninst false) true true)))
+  (is (not ((make-sim-fn (and (uninst false) true true)))))
+
+  (is (or true false))
+  (is (or false true))
+  (is (or false true true true))
+  (is (or true true true false))
+  (is (not (or false false false false)))
+
+  (is ((make-sim-fn (or true (uninst false)))))
+  (is ((make-sim-fn (or (uninst true) false))))
+  (is ((make-sim-fn (or (uninst true) (uninst false)))))
+  (is (make-sim-fn (or (uninst false) false false)))
+  (is (make-sim-fn (or false false (uninst false))))
+  (is (not ((make-sim-fn (or (uninst false) false false)))))
+  (is (not ((make-sim-fn (or false false (uninst false)))))))
+
 (deftest uintm-test
   (letfn [(um8 [v] (instance (uintm 8) v))]
     (is (= (+ (um8 200) 1) (um8 201)))
@@ -39,7 +72,14 @@
     (is (thrown? ExceptionInfo (promote (uintm 3) "lx")))
     (is (thrown? ExceptionInfo (promote (uintm 3) -1)))
     (is (thrown? ExceptionInfo (promote (uintm 3) 100)))
-    (is (= (- 0 (um8 1)) (um8 255)))))
+    (is (= (- 0 (um8 1)) (um8 255)))
+    (is ((make-sim-fn (> (uninst (um8 30)) (um8 20)))))
+    (is ((make-sim-fn (>= (uninst (um8 20)) (um8 20)))))
+    (is (>= (um8 20) (um8 20)))
+    (is ((make-sim-fn (<= (uninst (um8 20)) (um8 30)))))
+    (is (<= (um8 20) (um8 30)))
+    (is (thrown? ExceptionInfo
+                 (cast (uintm 8) #b00)))))
 
 (deftest binop-error-test
   (let [e (error "hi")]
@@ -69,95 +109,61 @@
   (is (= (serialize false) (cast (bits 1) 0)))
   (is (= (count (value (serialize
                          (promote (enum #{:a :b}) :a))))
-         1)) 
+         1))
   (is (= (count (value (serialize
                          (promote (enum #{:a :b :c}) :a))))
-         2)))  
+         2)))
 
 (deftest sim-uintm-bits-test
-  (let [mod (module [:outputs [c (promote (uintm 8) 0)
-                               d (promote (bits 4) 0)]]
-                    (connect c (+ c 1))
-                    (connect d (bit-slice (serialize c) 0 4)))
-        sim (make-sim mod)
-        init-state (first sim)
-        init-fns (second sim)]
-    (is (= (get (exec-sim init-state
-                          init-fns
-                          10)
-                [:c])
-           (instance (uintm 8) 10)))
-    (is (= (get (exec-sim init-state
-                          init-fns
-                          10)
-                [:d])
-           (instance (bits 4) [1 0 0 1])))
-    (is (= (get (exec-sim init-state
-                          init-fns
-                          18)
-                [:d])
-           (instance (bits 4) [0 0 0 1])))))
+  (let [mod (modulize
+              :root
+              {:c (fnk [c] (inc c))
+               :d (fnk [c] (bit-slice (serialize c) 0 4))}
+              {:c (promote (uintm 8) 0)
+               :d (promote (bits 4) 0)})]
+    (are [cycle reg val] (= (get (last (sim (compile-root mod) cycle)) [:root reg])
+                            val)
+         10 :c (instance (uintm 8) 10)
+         10 :d (instance (bits 4) [1 0 0 1])
+         18 :d (instance (bits 4) [0 0 0 1]))))
 
 (deftest sim-cast-test
-  (let [mod (module [:outputs [odd false
-                               c (promote (uintm 3) 0)]]
-                    (let [new-c (inc c)]
-                      (connect odd (cast (anontype :boolean) 
-                                         (bit-slice (serialize new-c) 0 1)))
-                      (connect c new-c)))
-        [state fns] (make-sim mod)]
-    (is (= (get (exec-sim state fns 1)
-                [:c])
-           (promote (uintm 3) 1)))
-
-    (is (= (get (exec-sim state fns 1)
-                [:odd])
-           true))
-    (is (= (get (exec-sim state fns 2)
-                [:odd])
-           false))
-    (is (= (get (exec-sim state fns 3)
-                [:odd])
-           true))
-
-    (is (= (get (exec-sim state fns 30)
-                [:c])
-           (instance (uintm 3) 30 :constrain)))
-    (is (= (get (exec-sim state fns 30)
-                [:odd])
-           false))))
+  (let [mod (modulize
+              :root
+              {:new-c (fnk [c] (inc c))
+               :c (fnk [new-c] new-c)
+               :odd (fnk [new-c]
+                         (cast (anontype :boolean)
+                               (bit-slice (serialize new-c) 0 1)))}
+              {:odd false
+               :c (promote (uintm 3) 0)})]
+    (are [cycle k v] (= (get (last (sim (compile-root mod) cycle)) [:root k]) v)
+         1 :c (promote (uintm 3) 1)
+         1 :odd true
+         2 :odd false
+         3 :odd true
+         30 :c (instance (uintm 3) 30 :constrain)
+         30 :odd false)))
 
 (deftest sim-equals-test
-  (let [mod (module [:outputs [triggered false]
-                     :feedback [c ((uintm 2) 0)]]
-                    (let [c' (inc c)]
-                      (connect c c')
-                      (connect triggered (= c' ((uintm 2) 3)))))
-        [state fns] (make-sim mod)]
-    (is (= (get (exec-sim state fns 0)
-                [:triggered])
-           false))
-    (is (= (get (exec-sim state fns 1)
-                [:triggered])
-           false))
-    (is (= (get (exec-sim state fns 2)
-                [:triggered])
-           false))
-    (is (= (get (exec-sim state fns 3)
-                [:triggered])
-           true))
-    (is (= (get (exec-sim state fns 4)
-                [:triggered])
-           false))
-    (is (= (get (exec-sim state fns 5)
-                [:triggered])
-           false))
-    (is (= (get (exec-sim state fns 6)
-                [:triggered])
-           false))
-    (is (= (get (exec-sim state fns 7)
-                [:triggered])
-           true))))
+  (let [mod (modulize
+              :root
+              {:c (fnk [c] (inc c))
+               :triggered (fnk [c]
+                               (= (inc c) ((uintm 2) 3)))}
+              {:c ((uintm 2) 0)
+               :triggered false})]
+    (are [cycle value] (= (get (last (sim (compile-root mod) cycle))
+                               [:root :triggered])
+                          value)
+         0 false
+         1 false
+         2 false
+         3 true
+         4 false
+         5 false
+         6 false
+         7 true)))
 
 (deftest enum-initialize-test
   (let [e (enum #{:a :b :c})]
@@ -165,14 +171,14 @@
   (is (thrown? ExceptionInfo
                (enum {:a (cast (bits 2) 0)
                       :b (cast (bits 2) 0)})))
-  (is (thrown? ExceptionInfo 
+  (is (thrown? ExceptionInfo
                (enum {:a (cast (bits 2) 0)
                       2 (cast (bits 2) 1)})))
-  (is (thrown? ExceptionInfo 
+  (is (thrown? ExceptionInfo
                (enum {:a (cast (bits 2) 0)
                       :b (cast (bits 3) 1)})))
-  (is (thrown? ExceptionInfo 
+  (is (thrown? ExceptionInfo
                (enum {:a 0
                       :b (cast (bits 2) 1)})))
-  (is (thrown? ExceptionInfo 
+  (is (thrown? ExceptionInfo
                (enum #{:a 1 "a"}))))

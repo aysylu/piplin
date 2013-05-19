@@ -1,9 +1,9 @@
 (ns piplin.seven-segment-decoder
   (:use clojure.test)
   (:use [slingshot.slingshot :only [throw+]])
-  (:refer-clojure :as clj :exclude [not= bit-or cond bit-xor + - * bit-and assoc assoc-in inc dec bit-not condp < > <= >= = cast get not])
-  (:use [piplin.types bits boolean bundle enum numbers union core-impl binops uintm])
-  (:use [piplin types math modules sim connect mux protocols]))
+  (:refer-clojure :as clj :exclude [not= bit-or cond bit-xor + - * bit-and assoc assoc-in inc dec bit-not condp < > <= >= = cast not and or bit-shift-left bit-shift-right pos? neg? zero?])
+  (:use plumbing.core
+        [piplin core]))
 
 (defn log16
   "log base 16"
@@ -21,7 +21,7 @@
   :upper-right, :lower-left, :lower-right, :middle}`
   to indices into the 7 bit output. This allows
   whatever encoding scheme is needed on the output.
-  
+
   E.x. for
      _______
     |   0   |
@@ -34,7 +34,7 @@
     |-------|
 
   the mapping would be
-  
+
   {:top 0
   :upper-left 1
   :lower-left 2
@@ -45,16 +45,18 @@
   (let [max-value (Math/pow 2 bit-width)
         required-digits (int (Math/ceil (log16 max-value)))
         padding-needed (mod (- 4 bit-width) 4)]
-    (module [:inputs [in (bits bit-width)]
-             :outputs [out (cast (bits (* 7 required-digits)) 0)]]
-            (let [in-padded (bit-cat
-                              (cast (bits padding-needed) 0)
-                              in)
-                  slices (for [low (range 0 bit-width 4)]
-                           (bit-slice in-padded low (+ low 4)))
-                  digits (map #(decode-digit % mapping) slices)]
-              (connect out (apply bit-cat
-                                  (reverse digits)))))))
+    (modulize :decoder
+      {:out (fnk [in]
+                 (assert (= (-> in typeof bit-width-of) bit-width))
+                 (let [in-padded (bit-cat
+                                   (cast (bits padding-needed) 0)
+                                   in)
+                       slices (for [low (range 0 bit-width 4)]
+                                (bit-slice in-padded low (+ low 4)))
+                       digits (map #(decode-digit % mapping) slices)]
+                   (apply bit-cat
+                          (reverse digits))))}
+      {:out (cast (bits (* 7 required-digits)) 0)})))
 
 (def sample-mapping
   {:top 0
@@ -78,47 +80,47 @@
 
 (def decoder-mapping
   {#b0000 #{:top :upper-left :lower-left
-            :upper-right :lower-right :bottom} 
+            :upper-right :lower-right :bottom}
 
-   #b0001 #{:upper-right :lower-right} 
+   #b0001 #{:upper-right :lower-right}
 
    #b0010 #{:top :upper-right :middle
-            :lower-left :bottom} 
+            :lower-left :bottom}
 
    #b0011 #{:top :middle :bottom
-            :upper-right :lower-right} 
+            :upper-right :lower-right}
 
    #b0100 #{:upper-left :upper-right
-            :middle :lower-right} 
+            :middle :lower-right}
 
    #b0101 #{:top :upper-left :middle
-            :lower-right :bottom} 
+            :lower-right :bottom}
 
    #b0110 #{:top :upper-left :middle
-            :lower-left :lower-right :bottom} 
+            :lower-left :lower-right :bottom}
 
-   #b0111 #{:top :upper-right :lower-right} 
+   #b0111 #{:top :upper-right :lower-right}
 
    #b1000 #{:top :upper-left :lower-left :middle
-            :upper-right :lower-right :bottom} 
+            :upper-right :lower-right :bottom}
 
    #b1001 #{:top :upper-left :middle
-            :upper-right :lower-right} 
+            :upper-right :lower-right}
 
    #b1010 #{:top :upper-left :middle :lower-left
-            :upper-right :lower-right} 
+            :upper-right :lower-right}
 
    #b1011 #{:upper-left :lower-left :middle
-            :lower-right :bottom} 
+            :lower-right :bottom}
 
    #b1100 #{:upper-left :lower-left
-            :top :bottom} 
+            :top :bottom}
 
    #b1101 #{:upper-right :lower-left :middle
-            :lower-right :bottom} 
+            :lower-right :bottom}
 
    #b1110 #{:upper-left :lower-left
-            :middle :top :bottom} 
+            :middle :top :bottom}
 
    #b1111 #{:upper-left :lower-left
             :middle :top}})
@@ -185,12 +187,15 @@
 
 (defn seven-seg-tester
   [bit-width]
-  (let [deco (decoder bit-width sample-mapping)]
-    (module tb [:feedback [x ((uintm bit-width) 0)]
-                :outputs [x_out (cast (typeof (subport deco :deco :out)) 0)]
-                :modules [deco deco]]
-            (connect x (inc x))
-          (connect x_out deco$out)
-          (connect
-            deco$in
-            (serialize x)))))
+  (let [deco (decoder bit-width sample-mapping)
+        x-value ((uintm bit-width) 0)
+        deco-out (-> (compile-root deco :in (serialize x-value))
+                   (get [:decoder :out])
+                   :piplin.modules/fn)]
+    (modulize
+      {:x (fnk [x] (inc x))
+       :x_out (fnk [x]
+                   (let [{:keys [out]} (deco :in (serialize x))]
+                     out))}
+     {:x x-value
+      :x_out (cast (typeof deco-out) 0)})))

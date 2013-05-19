@@ -118,13 +118,14 @@
     (or (nil? x) (nil? y))
     false
     (not (or (instance? piplin.types.ASTNode x)
-             (instance? piplin.types.ASTNode y)))  
+             (instance? piplin.types.ASTNode y)))
     (clj/= x y)
     (and (pipinst? x) (pipinst? y))
     (let [[x y] (type-unify (kindof x) x y)]
       (clj/= (value x) (value y)))
     :else
     (mkast (anontype :boolean) := [x y] =)))
+
 (defmethod = ::n-ary
   [x y & more]
   (if (= x y)
@@ -132,8 +133,3 @@
       (recur x (first more) (rest more))
       true)
     false))
-
-(defn not=
-  ([x] false)
-  ([x y] (not (= x y)))
-  ([x y & more] (not (apply = x y more))))

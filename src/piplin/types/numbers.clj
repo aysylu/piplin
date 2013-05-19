@@ -1,7 +1,7 @@
 (ns piplin.types.numbers
   (:refer-clojure :exclude [cast])
   (:use [slingshot.slingshot])
-  (:use [piplin.types]) 
+  (:use [piplin.types])
   (:use [piplin.protocols]))
 
 (derive-type java.lang.Long :piplin-type)
@@ -10,6 +10,7 @@
 (derive-type java.lang.Byte :piplin-type)
 (derive-type java.lang.Float :piplin-type)
 (derive-type java.lang.Double :piplin-type)
+(derive-type :j-integral :piplin-type)
 
 ;Allow the about types to participate in ITyped
 (extend-protocol ITyped
@@ -30,15 +31,15 @@
   (value [this] this)
   (pipinst? [this] true)
   java.lang.Float
-  (typeof [this] (anontype :j-num))
+  (typeof [this] (anontype :j-float))
   (value [this] this)
   (pipinst? [this] true)
   java.lang.Double
-  (typeof [this] (anontype :j-num))
+  (typeof [this] (anontype :j-double))
   (value [this] this)
   (pipinst? [this] true))
 
-(defmethod promote 
+(defmethod promote
   :j-int
   [type obj]
   (condp isa-type? (kindof obj)
@@ -49,7 +50,7 @@
                (throw+ (error obj "must be 32 bits or less"))))
     (throw+ (error "Cannot promote" obj "to Long"))))
 
-(defmethod promote 
+(defmethod promote
   :j-long
   [type obj]
   (condp isa-type? (kindof obj)
@@ -60,8 +61,10 @@
 ;JVM numeric type promotion rules
 (derive-type :j-integral :j-num)
 
-(derive-type Double :j-num)
-(derive-type Float :j-num)
+(derive-type Double :j-double)
+(derive-type Float :j-float)
+(derive-type :j-float :j-num)
+(derive-type :j-double :j-num)
 
 (derive-type Byte :j-byte)
 (derive-type Short :j-short)
